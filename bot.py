@@ -1,10 +1,9 @@
 import os
 import re
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from mutagen.mp4 import MP4
-
-# Import API details from config.py
 from config import API_ID, API_HASH, BOT_TOKEN
 
 # Initialize bot
@@ -15,7 +14,7 @@ user_thumbnails = {}
 
 # Function to process filename
 def process_filename(original_name):
-    pattern = r"(.+?)\s*[Ee]?(\d{1,3})?\s*[👦👦]?(1080p|720p|480p|360p)[👦👦]?\s*(Dual Audio|Subbed|Dubbed)?"
+    pattern = r"(.+?)\s*[Ee]?(\d{1,3})?\s*[\U0001F466\U0001F466]?(1080p|720p|480p|360p)[\U0001F466\U0001F466]?\s*(Dual Audio|Subbed|Dubbed)?"
     match = re.search(pattern, original_name, re.IGNORECASE)
     if match:
         title = match.group(1).strip()
@@ -28,37 +27,46 @@ def process_filename(original_name):
 
 # Function to update metadata
 def update_metadata(file_path):
-    video = MP4(file_path)
-    video["\xa9nam"] = "@Animes2u"  # Title
-    video["\xa9ART"] = "@Animes2u"  # Artist
-    video["\xa9alb"] = "@Animes2u"  # Album
-    video["\xa9cmt"] = "@Animes2u"  # Comment
-    video["\xa9too"] = "@Animes2u"  # Encoded by
-    video.save()
+    try:
+        video = MP4(file_path)
+        video["\xa9nam"] = "@Animes2u"
+        video["\xa9ART"] = "@Animes2u"
+        video["\xa9alb"] = "@Animes2u"
+        video["\xa9cmt"] = "@Animes2u"
+        video["\xa9too"] = "@Animes2u"
+        video.save()
+    except Exception as e:
+        print(f"Error updating metadata: {e}")
 
 # Start command
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
-    await message.reply("👋 Hello! Send me a *video file, and I'll rename it with **@Animes2u*, update metadata, and apply your custom thumbnail!")
+    await message.reply("👋 Hello! Send me multiple *video files*, and I'll rename them with **@Animes2u**, update metadata, and apply your custom thumbnail!")
 
-# Handle video file uploads
+# Handle multiple video file uploads
 @app.on_message(filters.video)
-async def rename_file(client, message: Message):
-    file = await message.download()
-    new_filename = process_filename(file)
-    os.rename(file, new_filename)
+async def rename_files(client, message: Message):
+    for video in message.video:
+        file = await message.download(progress=progress_callback, progress_args=(message, "Downloading"))
+        new_filename = process_filename(file)
+        os.rename(file, new_filename)
+        
+        # Update metadata
+        update_metadata(new_filename)
+        
+        # Get user thumbnail (if set)
+        thumb = user_thumbnails.get(message.from_user.id)
+        
+        # Send renamed file
+        await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
+        
+        # Cleanup
+        os.remove(new_filename)
 
-    # Update metadata
-    update_metadata(new_filename)
-
-    # Get user thumbnail (if set)
-    thumb = user_thumbnails.get(message.from_user.id)
-
-    # Send renamed file
-    await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
-    
-    # Cleanup
-    os.remove(new_filename)
+# Progress callback for file operations
+async def progress_callback(current, total, message: Message, status: str):
+    percent = (current / total) * 100
+    await message.edit_text(f"{status}: {percent:.2f}%")
 
 # Set user thumbnail
 @app.on_message(filters.command("setthumb") & filters.photo)
