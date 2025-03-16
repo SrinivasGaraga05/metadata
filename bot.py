@@ -46,27 +46,40 @@ async def start(client, message: Message):
 # Handle multiple video file uploads
 @app.on_message(filters.video)
 async def rename_files(client, message: Message):
-    for video in message.video:
-        file = await message.download(progress=progress_callback, progress_args=(message, "Downloading"))
-        new_filename = process_filename(file)
-        os.rename(file, new_filename)
-        
-        # Update metadata
-        update_metadata(new_filename)
-        
-        # Get user thumbnail (if set)
-        thumb = user_thumbnails.get(message.from_user.id)
-        
-        # Send renamed file
-        await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
-        
-        # Cleanup
-        os.remove(new_filename)
+    media_group = message.media_group_id
+    files = [message]
+    
+    if media_group:
+        await asyncio.sleep(2)  # Wait to collect all messages in the group
+        files = [msg async for msg in client.get_chat_history(message.chat.id, limit=10) if msg.media_group_id == media_group]
+    
+    tasks = [process_file(client, msg) for msg in files]
+    await asyncio.gather(*tasks)
+
+async def process_file(client, message: Message):
+    file = await message.download(progress=progress_callback, progress_args=(client, message, "Downloading"))
+    new_filename = process_filename(file)
+    os.rename(file, new_filename)
+    
+    # Update metadata
+    update_metadata(new_filename)
+    
+    # Get user thumbnail (if set)
+    thumb = user_thumbnails.get(message.from_user.id)
+    
+    # Send renamed file
+    await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
+    
+    # Cleanup
+    os.remove(new_filename)
 
 # Progress callback for file operations
-async def progress_callback(current, total, message: Message, status: str):
+async def progress_callback(client, message: Message, current, total, status: str):
     percent = (current / total) * 100
-    await message.edit_text(f"{status}: {percent:.2f}%")
+    try:
+        await message.edit_text(f"{status}: {percent:.2f}%")
+    except:
+        pass
 
 # Set user thumbnail
 @app.on_message(filters.command("setthumb") & filters.photo)
