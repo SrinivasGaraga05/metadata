@@ -1,6 +1,8 @@
 import os
 import re
 import asyncio
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from mutagen.mp4 import MP4
@@ -96,6 +98,13 @@ async def delete_thumbnail(client, message: Message):
         await message.reply("🗑 Thumbnail deleted!")
     else:
         await message.reply("⚠ No thumbnail found.")
+
+# Dummy web server for Render deployment
+def run_dummy_server():
+    server = HTTPServer(("0.0.0.0", 8080), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # Run the bot
 app.run()
