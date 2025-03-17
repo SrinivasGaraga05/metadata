@@ -2,11 +2,15 @@ import os
 import re
 import asyncio
 import threading
+import logging
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from mutagen.mp4 import MP4
 from config import API_ID, API_HASH, BOT_TOKEN
+
+# Enable logging for debugging
+logging.basicConfig(level=logging.INFO)
 
 # Initialize bot
 app = Client("FileRenameBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -16,7 +20,7 @@ user_thumbnails = {}
 
 # Function to process filename
 def process_filename(original_name):
-    pattern = r"(.+?)\s*[Ee]?(\d{1,3})?\s*[\U0001F466\U0001F466]?(1080p|720p|480p|360p)[\U0001F466\U0001F466]?\s*(Dual Audio|Subbed|Dubbed)?"
+    pattern = r"(.+?)\s*[Ee]?(\d{1,3})?\s*(1080p|720p|480p|360p)?\s*(Dual Audio|Subbed|Dubbed)?"
     match = re.search(pattern, original_name, re.IGNORECASE)
     if match:
         title = match.group(1).strip()
@@ -37,8 +41,9 @@ def update_metadata(file_path):
         video["\xa9cmt"] = "@Animes2u"
         video["\xa9too"] = "@Animes2u"
         video.save()
+        logging.info(f"✅ Metadata updated for {file_path}")
     except Exception as e:
-        print(f"❌ Error updating metadata: {e}")
+        logging.error(f"❌ Error updating metadata: {e}")
 
 # Start command
 @app.on_message(filters.command("start"))
@@ -54,49 +59,46 @@ async def rename_files(client, message: Message):
     if media_group:
         await asyncio.sleep(2)  # Wait to collect all messages in the group
         files = [msg async for msg in client.get_chat_history(message.chat.id, limit=10) if msg.media_group_id == media_group]
-    
+
     tasks = [process_file(client, msg) for msg in files]
     await asyncio.gather(*tasks)
 
 async def process_file(client, message: Message):
     try:
-        print(f"📥 Processing file from {message.from_user.id}...")
-
-        progress_msg = await message.reply("📥 Downloading...")
-
-        file = await message.download(progress=progress_callback, progress_args=(client, progress_msg, "Downloading"))
-        print("✅ Download complete:", file)
-
-        await progress_msg.edit_text("⚡ Processing file...")
+        logging.info(f"📥 Downloading file from user: {message.from_user.id}")
+        file = await message.download(progress=progress_callback, progress_args=(client, message, "Downloading"))
+        if not file:
+            logging.error("❌ File download failed!")
+            await message.reply("⚠ File download failed!")
+            return
 
         new_filename = process_filename(file)
         os.rename(file, new_filename)
-        print("✅ File renamed to:", new_filename)
+        logging.info(f"🔄 Renamed: {new_filename}")
 
         # Update metadata
-        print("ℹ️ Updating metadata for:", new_filename)
         update_metadata(new_filename)
 
-        # Get user thumbnail
+        # Get user thumbnail (if set)
         thumb = user_thumbnails.get(message.from_user.id)
 
         # Send renamed file
-        print("📤 Sending back:", new_filename)
         await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
-
+        
         # Cleanup
         os.remove(new_filename)
-        await progress_msg.delete()
+        logging.info(f"🗑 Deleted file: {new_filename}")
 
     except Exception as e:
-        print("❌ Error:", e)
-        await message.reply(f"⚠️ An error occurred: {e}")
+        logging.error(f"❌ Error processing file: {e}")
+        await message.reply("⚠ An error occurred while processing your file!")
 
 # Progress callback for file operations
 async def progress_callback(client, message: Message, current, total, status: str):
     percent = (current / total) * 100
     try:
         await message.edit_text(f"{status}: {percent:.2f}%")
+        logging.info(f"{status}: {percent:.2f}%")
     except:
         pass
 
@@ -106,6 +108,7 @@ async def set_thumbnail(client, message: Message):
     thumb_path = await message.download()
     user_thumbnails[message.from_user.id] = thumb_path
     await message.reply("✅ Thumbnail saved!")
+    logging.info(f"📸 Thumbnail saved for user {message.from_user.id}")
 
 # Delete user thumbnail
 @app.on_message(filters.command("delthumb"))
@@ -113,6 +116,7 @@ async def delete_thumbnail(client, message: Message):
     if message.from_user.id in user_thumbnails:
         os.remove(user_thumbnails.pop(message.from_user.id))
         await message.reply("🗑 Thumbnail deleted!")
+        logging.info(f"🗑 Thumbnail deleted for user {message.from_user.id}")
     else:
         await message.reply("⚠ No thumbnail found.")
 
