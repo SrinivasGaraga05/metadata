@@ -59,13 +59,23 @@ async def rename_files(client, message: Message):
     await asyncio.gather(*tasks)
 
 async def process_file(client, message: Message):
-    file = await message.download(progress=progress_callback, progress_args=(client, message, "Downloading"))
+    # Send initial progress message
+    progress_msg = await message.reply("📥 Downloading...")
+
+    file = await message.download(progress=progress_callback, progress_args=(client, progress_msg, "Downloading"))
+    
+    # Update progress message
+    await progress_msg.edit_text("⚡ Processing file...")
+
     new_filename = process_filename(file)
     os.rename(file, new_filename)
     
     # Update metadata
     update_metadata(new_filename)
     
+    # Update progress message
+    await progress_msg.edit_text("✅ Done! Sending file...")
+
     # Get user thumbnail (if set)
     thumb = user_thumbnails.get(message.from_user.id)
     
@@ -74,6 +84,7 @@ async def process_file(client, message: Message):
     
     # Cleanup
     os.remove(new_filename)
+    await progress_msg.delete()
 
 # Progress callback for file operations
 async def progress_callback(client, message: Message, current, total, status: str):
