@@ -38,7 +38,7 @@ def update_metadata(file_path):
         video["\xa9too"] = "@Animes2u"
         video.save()
     except Exception as e:
-        print(f"Error updating metadata: {e}")
+        print(f"❌ Error updating metadata: {e}")
 
 # Start command
 @app.on_message(filters.command("start"))
@@ -59,32 +59,38 @@ async def rename_files(client, message: Message):
     await asyncio.gather(*tasks)
 
 async def process_file(client, message: Message):
-    # Send initial progress message
-    progress_msg = await message.reply("📥 Downloading...")
+    try:
+        print(f"📥 Processing file from {message.from_user.id}...")
 
-    file = await message.download(progress=progress_callback, progress_args=(client, progress_msg, "Downloading"))
-    
-    # Update progress message
-    await progress_msg.edit_text("⚡ Processing file...")
+        progress_msg = await message.reply("📥 Downloading...")
 
-    new_filename = process_filename(file)
-    os.rename(file, new_filename)
-    
-    # Update metadata
-    update_metadata(new_filename)
-    
-    # Update progress message
-    await progress_msg.edit_text("✅ Done! Sending file...")
+        file = await message.download(progress=progress_callback, progress_args=(client, progress_msg, "Downloading"))
+        print("✅ Download complete:", file)
 
-    # Get user thumbnail (if set)
-    thumb = user_thumbnails.get(message.from_user.id)
-    
-    # Send renamed file
-    await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
-    
-    # Cleanup
-    os.remove(new_filename)
-    await progress_msg.delete()
+        await progress_msg.edit_text("⚡ Processing file...")
+
+        new_filename = process_filename(file)
+        os.rename(file, new_filename)
+        print("✅ File renamed to:", new_filename)
+
+        # Update metadata
+        print("ℹ️ Updating metadata for:", new_filename)
+        update_metadata(new_filename)
+
+        # Get user thumbnail
+        thumb = user_thumbnails.get(message.from_user.id)
+
+        # Send renamed file
+        print("📤 Sending back:", new_filename)
+        await message.reply_video(new_filename, thumb=thumb, caption=f"✅ Renamed: {new_filename}")
+
+        # Cleanup
+        os.remove(new_filename)
+        await progress_msg.delete()
+
+    except Exception as e:
+        print("❌ Error:", e)
+        await message.reply(f"⚠️ An error occurred: {e}")
 
 # Progress callback for file operations
 async def progress_callback(client, message: Message, current, total, status: str):
